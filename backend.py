@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 import joblib
 from datetime import datetime
+from deep_translator import GoogleTranslator
 
 app = FastAPI(title="NourishAI Intelligence API", version="1.0")
 
@@ -27,6 +28,34 @@ le_gender = joblib.load('encoder_gender.pkl')
 # Load beneficiary data
 df = pd.read_csv('beneficiary_data.csv')
 
+# Supported languages
+SUPPORTED_LANGUAGES = {
+    'en': 'English',
+    'hi': 'हिंदी (Hindi)',
+    'ta': 'தமிழ் (Tamil)',
+    'te': 'తెలుగు (Telugu)',
+    'kn': 'ಕನ್ನಡ (Kannada)',
+    'ml': 'മലയാളം (Malayalam)',
+    'mr': 'मराठी (Marathi)',
+    'bn': 'বাংলা (Bengali)',
+    'gu': 'ગુજરાતી (Gujarati)',
+    'pa': 'ਪੰਜਾਬੀ (Punjabi)',
+    'or': 'ଓଡ଼ିଆ (Odia)',
+    'as': 'অসমীয়া (Assamese)',
+    'ur': 'اردو (Urdu)'
+}
+
+def translate_text(text: str, target_lang: str = 'en', source_lang: str = 'auto') -> str:
+    """Translate text using Google Translate"""
+    if target_lang == 'en' or target_lang == source_lang:
+        return text
+    try:
+        translator = GoogleTranslator(source=source_lang, target=target_lang)
+        return translator.translate(text)
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return text
+
 # Models
 class MealInput(BaseModel):
     user_message: str
@@ -42,6 +71,7 @@ class RiskInput(BaseModel):
     calorie_intake_kcal: float
     attendance_rate: float
     days_since_last_check: int = 0
+    language: str = "en"
 
 class RiskPrediction(BaseModel):
     risk_score: float
@@ -119,7 +149,15 @@ def root():
     return {
         "message": "NourishAI Intelligence API",
         "version": "1.0",
-        "endpoints": ["/predict", "/chat", "/dashboard/stats", "/beneficiaries"]
+        "endpoints": ["/predict", "/chat", "/dashboard/stats", "/beneficiaries", "/languages"]
+    }
+
+@app.get("/languages")
+def get_supported_languages():
+    """Get list of supported languages"""
+    return {
+        "supported_languages": SUPPORTED_LANGUAGES,
+        "total_count": len(SUPPORTED_LANGUAGES)
     }
 
 @app.post("/predict", response_model=RiskPrediction)
@@ -158,37 +196,56 @@ def predict_risk(input_data: RiskInput):
         risk_category = cat_model.predict(features)[0]
         risk_proba = cat_model.predict_proba(features)[0]
         
+        # Generate recommendations
+        recommendations_en = generate_recommendations(risk_score, input_data)
+
+        # Translate recommendations to user's language
+        recommendations = [translate_text(rec, target_lang=input_data.language, source_lang='en')
+                         for rec in recommendations_en]
+
         return RiskPrediction(
             risk_score=round(float(risk_score), 1),
             risk_category=risk_category,
             confidence=round(float(max(risk_proba)) * 100, 1),
-            recommendations=generate_recommendations(risk_score, input_data),
+            recommendations=recommendations,
             timestamp=datetime.now().isoformat()
         )
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat")
 def chat_interface(meal_input: MealInput):
-    """Simple chatbot for meal logging"""
+    """Simple chatbot for meal logging with multi-language support"""
     try:
-        meal_data = extract_meals_from_text(meal_input.user_message)
-        
+        # Translate user input to English for processing
+        user_message_en = translate_text(meal_input.user_message, target_lang='en', source_lang=meal_input.language)
+
+        meal_data = extract_meals_from_text(user_message_en)
+
+        # Create response in English
+        message_en = f"I detected {len(meal_data['meals'])} food items covering {meal_data['diversity_score']} food groups."
+
+        if meal_data['diversity_score'] < 3:
+            suggestion_en = "Try to add more variety - include vegetables, fruits, or protein sources."
+        else:
+            suggestion_en = "Good dietary diversity! Keep it up."
+
+        # Translate response back to user's language
+        message = translate_text(message_en, target_lang=meal_input.language, source_lang='en')
+        suggestion = translate_text(suggestion_en, target_lang=meal_input.language, source_lang='en')
+
         response = {
             "detected_meals": meal_data['meals'],
             "food_groups": meal_data['food_groups'],
             "diversity_score": meal_data['diversity_score'],
-            "message": f"I detected {len(meal_data['meals'])} food items covering {meal_data['diversity_score']} food groups."
+            "message": message,
+            "suggestion": suggestion,
+            "language": meal_input.language
         }
-        
-        if meal_data['diversity_score'] < 3:
-            response['suggestion'] = "Try to add more variety - include vegetables, fruits, or protein sources."
-        else:
-            response['suggestion'] = "Good dietary diversity! Keep it up."
-        
+
         return response
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -196,6 +253,14 @@ def chat_interface(meal_input: MealInput):
 def get_dashboard_stats():
     """Get aggregated statistics"""
     try:
+        # Convert risk_by_age to JSON-serializable format
+        risk_by_age_raw = df.groupby('age_group')['risk_category'].value_counts()
+        risk_by_age = {}
+        for (age, risk), count in risk_by_age_raw.items():
+            if age not in risk_by_age:
+                risk_by_age[age] = {}
+            risk_by_age[age][risk] = int(count)
+
         stats = {
             'total_beneficiaries': len(df),
             'high_risk_count': len(df[df['risk_category'] == 'High']),
@@ -207,10 +272,10 @@ def get_dashboard_stats():
                 'risk_score': 'mean',
                 'beneficiary_id': 'count'
             }).round(1).to_dict(),
-            'risk_by_age': df.groupby('age_group')['risk_category'].value_counts().to_dict()
+            'risk_by_age': risk_by_age
         }
         return stats
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
