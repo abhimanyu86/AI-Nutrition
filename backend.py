@@ -253,6 +253,14 @@ def chat_interface(meal_input: MealInput):
 def get_dashboard_stats():
     """Get aggregated statistics"""
     try:
+        # Convert risk_by_age to JSON-serializable format
+        risk_by_age_raw = df.groupby('age_group')['risk_category'].value_counts()
+        risk_by_age = {}
+        for (age, risk), count in risk_by_age_raw.items():
+            if age not in risk_by_age:
+                risk_by_age[age] = {}
+            risk_by_age[age][risk] = int(count)
+
         stats = {
             'total_beneficiaries': len(df),
             'high_risk_count': len(df[df['risk_category'] == 'High']),
@@ -264,10 +272,10 @@ def get_dashboard_stats():
                 'risk_score': 'mean',
                 'beneficiary_id': 'count'
             }).round(1).to_dict(),
-            'risk_by_age': df.groupby('age_group')['risk_category'].value_counts().to_dict()
+            'risk_by_age': risk_by_age
         }
         return stats
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

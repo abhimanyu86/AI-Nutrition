@@ -48,8 +48,8 @@ score_model.fit(X_train, y_score_train)
 # Evaluate
 y_pred_score = score_model.predict(X_test)
 mae = mean_absolute_error(y_score_test, y_pred_score)
-print(f"✅ Risk Score MAE: {mae:.2f}")
-print(f"   Average prediction error: ±{mae:.1f} points\n")
+print(f"[OK] Risk Score MAE: {mae:.2f}")
+print(f"   Average prediction error: +/-{mae:.1f} points\n")
 
 # Train Risk Category Classifier
 print("Training Risk Category Classifier...")
@@ -62,7 +62,7 @@ cat_model.fit(X_train, y_cat_train)
 
 # Evaluate
 y_pred_cat = cat_model.predict(X_test)
-print("✅ Classification Report:")
+print("[OK] Classification Report:")
 print(classification_report(y_cat_test, y_pred_cat))
 
 # Feature importance
@@ -71,7 +71,7 @@ feature_importance = pd.DataFrame({
     'importance': score_model.feature_importances_
 }).sort_values('importance', ascending=False)
 
-print("\n📊 Top Features for Risk Prediction:")
+print("\n[INFO] Top Features for Risk Prediction:")
 print(feature_importance.head(5))
 
 # Save models and encoders
@@ -81,4 +81,4 @@ joblib.dump(le_age, 'encoder_age.pkl')
 joblib.dump(le_region, 'encoder_region.pkl')
 joblib.dump(le_gender, 'encoder_gender.pkl')
 
-print("\n✅ Models saved successfully!")
+print("\n[OK] Models saved successfully!")
