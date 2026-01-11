@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import requests
 from datetime import datetime
 import streamlit.components.v1 as components
+import os
 
 st.set_page_config(page_title="NourishAI Intelligence", layout="wide", page_icon="🍎")
 
@@ -40,8 +41,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# API endpoint
-API_URL = "http://localhost:8000"
+# API endpoint - can be set via environment variable for Cloud Run
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # Supported languages
 LANGUAGES = {
